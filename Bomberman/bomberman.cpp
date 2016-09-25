@@ -79,7 +79,7 @@ struct Point
 };
 
 struct Square {
-    enum type { player, empty, box, bomb, item};
+    enum type { player, empty, box, bomb, item, wall};
     type t;
     Point p;
     char timer;
@@ -111,6 +111,13 @@ struct Square {
         this->timer=-1;
         this->range=-1;
     }
+    bool canEnter() const {
+        if (this->t == type::empty ||
+            this->t == type::item) {
+            return true;
+        }
+        return false;
+    }
 
     string toString() {
         return "location " + this->p.toString() + " type " + to_string(this->t) + " timer " + to_string(this->timer) + " range " + to_string(this->range);
@@ -123,23 +130,6 @@ struct Gene {
     Gene () : move(0), bomb(false) {}
     Gene(float m, bool b) : move(m), bomb(b) {}
 
-    Point getNext(const Point& p) const
-    {
-        Point pres(p);
-        if (this->move <0.2) {
-            return p;
-        } else if (this->move >=0.2 && this->move < 0.4) {
-            pres.x += 1;
-        } else if (this->move >= 0.4 && this->move < 0.6) {
-            pres.y += 1;
-        } else if (this->move >= 0.6 && this->move < 0.8) {
-            pres.x -= 1;
-        } else if (this->move >= 0.8) {
-            pres.y -= 1;
-        }
-        pres.correctBounds();
-        return pres;
-    }
     string toString() const {
         string dir = ".";
         if (this->move <0.2) {
@@ -184,9 +174,11 @@ struct Board
     {
         for(char x =0;x<this->width;++x)
         {
-            if(row[x] == '.'){
+            if (row[x] == '.') {
                 this->theBoard[x][i].update(Square::empty,Point(x,i),-1,-1);
-            }else{
+            }else if (row[x] == '.') {
+                this->theBoard[x][i].update(Square::wall,Point(x,i),-1,-1);
+            } else {
                 this->theBoard[x][i].update(Square::box,Point(x,i),-1,-1);
             }
         }
@@ -205,10 +197,31 @@ struct Board
             this->theBoard[x][y].update(Square::item,Point(x,y), param1,-1);
         }
     }
+    Point getNext(const Gene& g, const Point& p) const
+    {
+        Point pres(p);
+        if (g.move <0.2) {
+            return p;
+        } else if (g.move >=0.2 && g.move < 0.4) {
+            pres.x += 1;
+        } else if (g.move >= 0.4 && g.move < 0.6) {
+            pres.y += 1;
+        } else if (g.move >= 0.6 && g.move < 0.8) {
+            pres.x -= 1;
+        } else if (g.move >= 0.8) {
+            pres.y -= 1;
+        }
+        pres.correctBounds();
+        if ( ! this->theBoard[pres.x][pres.y].canEnter() ) {
+            return p;// Cannot move there, stay where we are
+        }
+        // TODO check not in explosion radius
+        return pres;
+    }
     uint boxInRange(const Square& bomb){
         uint res = 0 ;
         if (global_debug) cerr << "Range : " << to_string(bomb.range) << endl;
-        if (global_debug) cerr << "Width : " << this->width << endl;
+        if (global_debug) cerr << "Width : " << to_string(this->width) << endl;
         if (global_debug) cerr << "Valid : " << to_string(bomb.p.x+2) << endl;
         if (global_debug) cerr << "Valid2 : " << (bomb.p.x+2 <= this->width) << endl;
         for (char x = 0; x <= bomb.range && bomb.p.x+x <=this->width; ++x){
@@ -251,7 +264,7 @@ struct Board
 
 
     void update(const Gene& g, int multiplier){
-        Point new_pos = g.getNext(this->player->p);
+        Point new_pos = this->getNext(g, this->player->p);
 
         // Treat the bomb case
         if (g.bomb) {
@@ -340,7 +353,7 @@ string output(const Gene& g, const Board& b){
         res += "MOVE";
     }
     res += " ";
-    res += g.getNext(b.player->p).toString();
+    res += b.getNext(g, b.player->p).toString();
     return res;
 }
 
@@ -402,12 +415,12 @@ int main()
                 break;
             }
         }
-        global_debug=true;
+        //global_debug=true;
         //Genome myGenome(0);
         //myGenome.array[0] = Gene(0, true);
         //myGenome.array[1] = Gene(0.5, true);
         //calculateScore(myGenome, *global_board);
-        global_debug=false;
+        //global_debug=false;
         cerr << "Best score selected is " << bestScore << endl;
         cerr << someGenomes[bestGenome].toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
