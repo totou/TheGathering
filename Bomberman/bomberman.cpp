@@ -114,6 +114,7 @@ struct Square {
         this->t=type::empty;
         this->timer=-1;
         this->range=-1;
+        this->id=-1;
     }
     bool canEnter() const {
         if (this->t == type::empty ||
@@ -202,14 +203,16 @@ struct Board
             this->theBoard[x][y].update(Square::item,Point(x,y), param1,-1, owner);
         }
     }
-    bool isDeadlyFor(const Square& player, const Point& p) const {// TODO Improve to calculate the chain reactions
+    bool isDeadlyFor(const Square& player, const Point& p) const {// TODO Improve to calculate the chain reactions + timers
+        // Bombs are stopped by boxes, items and walls so far
         for (char x=0; x < this->width && p.x+x < this->width; ++x) {
             if (this->theBoard[p.x+x][p.y].t == Square::type::box ||
-                this->theBoard[p.x+x][p.y].t == Square::type::wall) {
+                this->theBoard[p.x+x][p.y].t == Square::type::wall ||
+                this->theBoard[p.x+x][p.y].t == Square::type::item) {
                 return false; // We are safe for sure
             } else if (this->theBoard[p.x+x][p.y].t == Square::type::bomb) {
                 if (this->theBoard[p.x+x][p.y].range >= x) {
-                    return true; // We are in explosion radius
+                    return true; // We are in explosion radius and timing
                 } else {
                     break; // We are out of range on RIGHT side
                 }
@@ -218,7 +221,8 @@ struct Board
         }
         for (char x=0; x < this->width && p.x-x >= 0; ++x) {
             if (this->theBoard[p.x-x][p.y].t == Square::type::box ||
-                this->theBoard[p.x-x][p.y].t == Square::type::wall) {
+                this->theBoard[p.x-x][p.y].t == Square::type::wall ||
+                this->theBoard[p.x-x][p.y].t == Square::type::item) {
                 return false; // We are safe for sure
             } else if (this->theBoard[p.x-x][p.y].t == Square::type::bomb) {
                 if (this->theBoard[p.x-x][p.y].range >= x) {
@@ -231,7 +235,8 @@ struct Board
         }
         for (char y=0; y<this->width && p.y+y < this->width; ++y) {
             if (this->theBoard[p.x][p.y+y].t == Square::type::box ||
-                this->theBoard[p.x][p.y+y].t == Square::type::wall) {
+                this->theBoard[p.x][p.y+y].t == Square::type::wall ||
+                this->theBoard[p.x][p.y+y].t == Square::type::item) {
                 return false; // We are safe for sure
             } else if (this->theBoard[p.x][p.y+y].t == Square::type::bomb) {
                 if (this->theBoard[p.x][p.y+y].range >= y) {
@@ -244,7 +249,8 @@ struct Board
         }
         for (char y=0; y<this->height && p.y-y >= 0; ++y) {
             if (this->theBoard[p.x][p.y-y].t == Square::type::box ||
-                this->theBoard[p.x][p.y-y].t == Square::type::wall) {
+                this->theBoard[p.x][p.y-y].t == Square::type::wall ||
+                this->theBoard[p.x][p.y-y].t == Square::type::item) {
                 return false; // We are safe for sure
             } else if (this->theBoard[p.x][p.y-y].t == Square::type::bomb) {
                 if (this->theBoard[p.x][p.y-y].range >= y) {
@@ -256,6 +262,28 @@ struct Board
             // Else we are not sure, must continue investigating
         }
         return false; // Default we suppose we are safe
+    }
+    void bigBadaboum() {
+        // Go decrement all bomb timers
+        list<Square*> explosionList;
+        list<Square*> deletedObjects;
+        for(char y= 0; y< this->height;++y){
+            for(char x= 0; x< this->width;++x){
+                if (this->theBoard[x][y].t == Square::type::bomb) {
+                    --this->theBoard[x][y].timer;
+                    if (this->theBoard[x][y].timer == 0) {
+                        explosionList.push_back(&(this->theBoard[x][y]));
+                    }
+                }
+            }
+        }
+        // Simultaneous explosions
+        // TODOOOOO
+
+        // Cleaning the map
+        for (list<Square*>::const_iterator itObjects=deletedObjects.begin(); itObjects!=deletedObjects.end(); ++itObjects) {
+            (*itObjects)->setEmpty();
+        }
     }
     Point getNext(const Gene& g, const Point& p) const
     {
@@ -331,9 +359,11 @@ struct Board
 
 
     void update(const Gene& g, int multiplier){
-        Point new_pos = this->getNext(g, this->player->p);
 
-        // Treat the bomb case
+        // cf. Experts rules for details
+        // First: bombs explodes (if reach timer 0) and destroy objects
+        this->bigBadaboum();
+        // Treat the bomb dropped case TODO include in bigBadaboum
         if (g.bomb) {
             this->theBoard[this->player->p.x][this->player->p.y].setBomb();
             // TODO : change the behavior for the actual bomd explosion instead of anticipating
@@ -348,6 +378,8 @@ struct Board
             }
         }
 
+        // Then: we move the player(s)
+        Point new_pos = this->getNext(g, this->player->p);
         // Treat the movement of the player
         if ((this->theBoard[new_pos.x][new_pos.y].t==Square::type::empty ||
                 this->theBoard[new_pos.x][new_pos.y].t==Square::type::item) &&
@@ -362,8 +394,13 @@ struct Board
             // update the new pointer to the new player square
             this->player = &(this->theBoard[new_pos.x][new_pos.y]);
         }
-
         if (global_debug) {cerr << "Player moved here " << this->player->p.toString() << endl;}
+
+        // New bombs finally appears
+        if (g.bomb) {
+            // Currently called twice, but should decrease to only this one after refactoring the above TODO
+            this->theBoard[this->player->p.x][this->player->p.y].setBomb();
+        }
     }
 
 
