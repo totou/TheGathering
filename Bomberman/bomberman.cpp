@@ -140,7 +140,7 @@ struct Gene {
         pres.correctBounds();
         return pres;
     }
-    string toString(){
+    string toString() const {
         string dir = ".";
         if (this->move <0.2) {
             dir = ".";
@@ -207,7 +207,13 @@ struct Board
     }
     uint boxInRange(const Square& bomb){
         uint res = 0 ;
+        if (global_debug) cerr << "Range : " << to_string(bomb.range) << endl;
+        if (global_debug) cerr << "Width : " << this->width << endl;
+        if (global_debug) cerr << "Valid : " << to_string(bomb.p.x+2) << endl;
+        if (global_debug) cerr << "Valid2 : " << (bomb.p.x+2 <= this->width) << endl;
         for (char x = 0; x <= bomb.range && bomb.p.x+x <=this->width; ++x){
+            if (global_debug) cerr << "Testing Case : " << this->theBoard[bomb.p.x+x][bomb.p.y].p.toString() << endl;
+            if (global_debug) cerr << "Type Case : " << this->theBoard[bomb.p.x+x][bomb.p.y].t << endl;
             if (this->theBoard[bomb.p.x+x][bomb.p.y].t == Square::type::box){
                 if (global_debug) cerr << "Box RIGHT: " << this->theBoard[bomb.p.x+x][bomb.p.y].p.toString() << endl;
                 ++res;
@@ -242,6 +248,8 @@ struct Board
 
         return res;
     }
+
+
     void update(const Gene& g, int multiplier){
         Point new_pos = g.getNext(this->player->p);
 
@@ -249,11 +257,15 @@ struct Board
         if (g.bomb) {
             this->theBoard[this->player->p.x][this->player->p.y].setBomb();
             // TODO : change the behavior for the actual bomd explosion instead of anticipating
-            this->score += this->boxInRange(*(this->player)) * multiplier;
+            this->score += this->boxInRange(this->theBoard[this->player->p.x][this->player->p.y]) * multiplier;
+            
+            if (global_debug) cerr << "Case is: " << this->theBoard[this->player->p.x][this->player->p.y].toString() << endl;
+            if (global_debug) cerr << "Player is: " << (*(this->player)).p.toString() << endl;
             if (global_debug) {
                 cerr << "Bomb will be here " << this->player->p.toString() << endl;
-                cerr << "boxInRange to " << this->boxInRange(*(this->player)) << " boxes" << endl;
+                cerr << "boxInRange to " << this->boxInRange(*(this->player)) << " boxes with multiplier " << multiplier << endl;
                 cerr << "Setting bomb to " << this->player->p.toString() << endl;
+            }
         }
 
         // Treat the movement of the player
@@ -262,14 +274,15 @@ struct Board
            new_pos.y >= 0 && new_pos.y < this->height) { // valid move
             // update the new square with the player information
             this->theBoard[new_pos.x][new_pos.y].update(this->theBoard[this->player->p.x][this->player->p.x]);
-
-            } else {
-                this->theBoard[this->player->p.x][this->player->p.y].setEmpty();
-            }
+            this->theBoard[this->player->p.x][this->player->p.y].setEmpty();
             // update the new pointer to the new player square
             this->player = &(this->theBoard[new_pos.x][new_pos.y]);
         }
+
+        if (global_debug) {cerr << "Player moved here " << this->player->p.toString() << endl;}
     }
+
+
     void toString(){
         for(char y= 0; y< this->height;++y){
             for(char x= 0; x< this->width;++x){
@@ -289,7 +302,7 @@ struct Genome {
                 this->array[i]=Gene(static_cast <float> (rand()) / static_cast <float> (RAND_MAX),false);
                 --bomb_t;
             }else{
-                if(static_cast <float> (rand()) / static_cast <float> (RAND_MAX) > 0.90){
+                if(static_cast <float> (rand()) / static_cast <float> (RAND_MAX) > 0.50){
                     this->array[i]=Gene(static_cast <float> (rand()) / static_cast <float> (RAND_MAX),true);
                     bomb_t=8;
                 }else{
@@ -312,7 +325,9 @@ struct Genome {
 uint calculateScore(const Genome& genome, Board board)
 {
     for (char i=0; i<GLOBAL_GENOME_SIZE; ++i) {
-        board.update(genome.array[i], 10*GLOBAL_GENOME_SIZE-i);
+        if (global_debug) {cerr << "We update with gene: " << genome.array[i].toString() << endl;}
+        board.update(genome.array[i], GLOBAL_GENOME_SIZE-i);
+        if (global_debug) {cerr << "New score: " << board.score << endl;}
     }
     return board.score;
 }
@@ -345,6 +360,8 @@ int main()
     global_board = &theBoard;
     char player_num=2;
     Square* players[player_num];
+    // TODO implement a real bomb stock manager
+    char next_bomb = 0;
     // game loop
     while (1)
     {
@@ -374,7 +391,7 @@ int main()
         uint bestScore=0;
         for (uint i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
             uint newScore=0;
-            someGenomes[i] = Genome(0);
+            someGenomes[i] = Genome(next_bomb);
             newScore = calculateScore(someGenomes[i], *global_board);
             if (newScore > bestScore) {
                 bestScore = newScore;
@@ -385,8 +402,11 @@ int main()
                 break;
             }
         }
-        global_debug=false;
-        calculateScore(someGenomes[bestGenome], *global_board);
+        global_debug=true;
+        //Genome myGenome(0);
+        //myGenome.array[0] = Gene(0, true);
+        //myGenome.array[1] = Gene(0.5, true);
+        //calculateScore(myGenome, *global_board);
         global_debug=false;
         cerr << "Best score selected is " << bestScore << endl;
         cerr << someGenomes[bestGenome].toString() << endl;
@@ -394,5 +414,9 @@ int main()
         // To debug: cerr << "Debug messages..." << endl;
         global_board->toString();
         cout << output(someGenomes[bestGenome].array[0], *global_board) << endl;
+        if (someGenomes[bestGenome].array[0].bomb) {
+            next_bomb = 8;
+        }
+        --next_bomb;
     }
 }
