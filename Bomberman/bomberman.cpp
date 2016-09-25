@@ -14,7 +14,7 @@ using namespace std;
 const signed char GLOBAL_TURN_TIME = 100;
 const signed char GLOBAL_TURN_TIME_MAX = 90;
 const int GLOBAL_TURN_TIME_MAX_FIRST_TURN = 450;
-const signed char GLOBAL_GENOME_SIZE = 16;
+const signed char GLOBAL_GENOME_SIZE = 8;
 const uint GLOBAL_GENOME_SAMPLE_SIZE = 50000;
 const signed char GLOBAL_MAX_WIDTH = 13;
 const signed char GLOBAL_MAX_HEIGHT = 11;
@@ -84,27 +84,31 @@ struct Square {
     Point p;
     char timer;
     char range;
+    char id;
     Square() {
         this->p = Point(-1,-1);
         this->t = type::empty;
         this->timer=-1;
         this->range=-1;
+        this->id=-1;
     }
-    void update(Square::type t, Point p, char timer, char range) {
+    void update(Square::type t, Point p, char timer, char range, char id) {
         this->p=p;
         this->t=t;
         this->timer=timer;
         this->range=range;
+        this->id=id;
     }
     void update(Square s) {//take the attributs of another square
         this->t=s.t;
         this->timer=s.timer;
         this->range=s.range;
+        // TODO Should update ID here?
     }
     void setBomb(){
         this->t=type::bomb;
         this->timer=8;
-        this->range=2;
+        this->range=3;
     }
     void setEmpty(){
         this->t=type::empty;
@@ -154,6 +158,7 @@ struct Board
     char width;
     Square theBoard[GLOBAL_MAX_WIDTH][GLOBAL_MAX_HEIGHT];
     Square* player;
+    Square* players[4] = {NULL, NULL, NULL, NULL};
     uint score;
 
     Board(char w, char h){
@@ -175,11 +180,11 @@ struct Board
         for(char x =0;x<this->width;++x)
         {
             if (row[x] == '.') {
-                this->theBoard[x][i].update(Square::empty,Point(x,i),-1,-1);
-            }else if (row[x] == '.') {
-                this->theBoard[x][i].update(Square::wall,Point(x,i),-1,-1);
+                this->theBoard[x][i].update(Square::empty,Point(x,i),-1,-1,-1);
+            }else if (row[x] == 'X') {
+                this->theBoard[x][i].update(Square::wall,Point(x,i),-1,-1,-1);
             } else {
-                this->theBoard[x][i].update(Square::box,Point(x,i),-1,-1);
+                this->theBoard[x][i].update(Square::box,Point(x,i),-1,-1,-1);
             }
         }
     }
@@ -187,15 +192,70 @@ struct Board
     {
         if (entityType == 0 )//player
         {
-            this->theBoard[x][y].update(Square::player,Point(x,y),-1,-1);
+            this->theBoard[x][y].update(Square::player,Point(x,y),-1,-1,owner);
             if(myId == owner) {
                 this->player = &(this->theBoard[x][y]);
             }
         }else if (entityType == 1){ //Bomb
-            this->theBoard[x][y].update(Square::bomb,Point(x,y), param1, param2);
+            this->theBoard[x][y].update(Square::bomb,Point(x,y), param1, param2, owner);
         }else if (entityType == 2){ // Item
-            this->theBoard[x][y].update(Square::item,Point(x,y), param1,-1);
+            this->theBoard[x][y].update(Square::item,Point(x,y), param1,-1, owner);
         }
+    }
+    bool isDeadlyFor(const Square& player, const Point& p) const {// TODO Improve to calculate the chain reactions
+        for (char x=0; x < this->width && p.x+x < this->width; ++x) {
+            if (this->theBoard[p.x+x][p.y].t == Square::type::box ||
+                this->theBoard[p.x+x][p.y].t == Square::type::wall) {
+                return false; // We are safe for sure
+            } else if (this->theBoard[p.x+x][p.y].t == Square::type::bomb) {
+                if (this->theBoard[p.x+x][p.y].range >= x) {
+                    return true; // We are in explosion radius
+                } else {
+                    break; // We are out of range on RIGHT side
+                }
+            }
+            // Else we are not sure, must continue investigating
+        }
+        for (char x=0; x < this->width && p.x-x >= 0; ++x) {
+            if (this->theBoard[p.x-x][p.y].t == Square::type::box ||
+                this->theBoard[p.x-x][p.y].t == Square::type::wall) {
+                return false; // We are safe for sure
+            } else if (this->theBoard[p.x-x][p.y].t == Square::type::bomb) {
+                if (this->theBoard[p.x-x][p.y].range >= x) {
+                    return true; // We are in explosion radius
+                } else {
+                    break; // We are out of range on LEFT side
+                }
+            }
+            // Else we are not sure, must continue investigating
+        }
+        for (char y=0; y<this->width && p.y+y < this->width; ++y) {
+            if (this->theBoard[p.x][p.y+y].t == Square::type::box ||
+                this->theBoard[p.x][p.y+y].t == Square::type::wall) {
+                return false; // We are safe for sure
+            } else if (this->theBoard[p.x][p.y+y].t == Square::type::bomb) {
+                if (this->theBoard[p.x][p.y+y].range >= y) {
+                    return true; // We are in explosion radius
+                } else {
+                    break; // We are out of range on DOWN side
+                }
+            }
+            // Else we are not sure, must continue investigating
+        }
+        for (char y=0; y<this->height && p.y-y >= 0; ++y) {
+            if (this->theBoard[p.x][p.y-y].t == Square::type::box ||
+                this->theBoard[p.x][p.y-y].t == Square::type::wall) {
+                return false; // We are safe for sure
+            } else if (this->theBoard[p.x][p.y-y].t == Square::type::bomb) {
+                if (this->theBoard[p.x][p.y-y].range >= y) {
+                    return true; // We are in explosion radius
+                } else {
+                    break; // We are out of range on UP side
+                }
+            }
+            // Else we are not sure, must continue investigating
+        }
+        return false; // Default we suppose we are safe
     }
     Point getNext(const Gene& g, const Point& p) const
     {
@@ -216,46 +276,53 @@ struct Board
             return p;// Cannot move there, stay where we are
         }
         // TODO check not in explosion radius
+        if ( this->isDeadlyFor(*player, pres) ) {
+            return p;// It's dangerous out there, stay where we are !
+        }
         return pres;
     }
     uint boxInRange(const Square& bomb){
         uint res = 0 ;
-        if (global_debug) cerr << "Range : " << to_string(bomb.range) << endl;
-        if (global_debug) cerr << "Width : " << to_string(this->width) << endl;
-        if (global_debug) cerr << "Valid : " << to_string(bomb.p.x+2) << endl;
-        if (global_debug) cerr << "Valid2 : " << (bomb.p.x+2 <= this->width) << endl;
-        for (char x = 0; x <= bomb.range && bomb.p.x+x <=this->width; ++x){
+        for (char x = 0; x < bomb.range && bomb.p.x+x <=this->width; ++x){
             if (global_debug) cerr << "Testing Case : " << this->theBoard[bomb.p.x+x][bomb.p.y].p.toString() << endl;
             if (global_debug) cerr << "Type Case : " << this->theBoard[bomb.p.x+x][bomb.p.y].t << endl;
             if (this->theBoard[bomb.p.x+x][bomb.p.y].t == Square::type::box){
                 if (global_debug) cerr << "Box RIGHT: " << this->theBoard[bomb.p.x+x][bomb.p.y].p.toString() << endl;
                 ++res;
                 break;
+            } else if (this->theBoard[bomb.p.x+x][bomb.p.y].t == Square::type::wall) {
+                break;// A wall blocks the explosion, no need to look further
             }
         }
 
 
-        for (char x = 0; x >= -bomb.range && bomb.p.x+x >= 0; --x) {
+        for (char x = 0; x > -bomb.range && bomb.p.x+x >= 0; --x) {
             if (this->theBoard[bomb.p.x+x][bomb.p.y].t == Square::type::box){
                   if (global_debug) cerr << "Box LEFT: " << this->theBoard[bomb.p.x+x][bomb.p.y].p.toString() << endl;
                 ++res;
                 break;
+            } else if (this->theBoard[bomb.p.x+x][bomb.p.y].t == Square::type::wall) {
+                break;// A wall blocks the explosion, no need to look further
             }
         }
 
-        for (char y = 0; y <= bomb.range && bomb.p.y+y <= this->height; ++y){
+        for (char y = 0; y < bomb.range && bomb.p.y+y <= this->height; ++y){
             if (this->theBoard[bomb.p.x][bomb.p.y+y].t == Square::type::box){
                 if (global_debug) cerr << "Box DOWN: " << this->theBoard[bomb.p.x][bomb.p.y+y].p.toString() << endl;
                 ++res;
                 break;
+            } else if (this->theBoard[bomb.p.x][bomb.p.y+y].t == Square::type::wall) {
+                break;// A wall blocks the explosion, no need to look further
             }
         }
 
-        for (char y = 0; y >= -bomb.range && bomb.p.y+y >= 0; --y){
+        for (char y = 0; y > -bomb.range && bomb.p.y+y >= 0; --y){
             if (this->theBoard[bomb.p.x][bomb.p.y+y].t == Square::type::box){
                 if (global_debug) cerr << "Box UP: " << this->theBoard[bomb.p.x][bomb.p.y+y].p.toString() << endl;
                 ++res;
                 break;
+            } else if (this->theBoard[bomb.p.x][bomb.p.y+y].t == Square::type::wall) {
+                break;// A wall blocks the explosion, no need to look further
             }
         }
 
@@ -271,7 +338,7 @@ struct Board
             this->theBoard[this->player->p.x][this->player->p.y].setBomb();
             // TODO : change the behavior for the actual bomd explosion instead of anticipating
             this->score += this->boxInRange(this->theBoard[this->player->p.x][this->player->p.y]) * multiplier;
-            
+
             if (global_debug) cerr << "Case is: " << this->theBoard[this->player->p.x][this->player->p.y].toString() << endl;
             if (global_debug) cerr << "Player is: " << (*(this->player)).p.toString() << endl;
             if (global_debug) {
@@ -282,9 +349,13 @@ struct Board
         }
 
         // Treat the movement of the player
-        if (this->theBoard[new_pos.x][new_pos.y].t == Square::type::empty &&
+        if ((this->theBoard[new_pos.x][new_pos.y].t==Square::type::empty ||
+                this->theBoard[new_pos.x][new_pos.y].t==Square::type::item) &&
            new_pos.x >= 0 && new_pos.x < this->width &&
            new_pos.y >= 0 && new_pos.y < this->height) { // valid move
+            if (this->theBoard[new_pos.x][new_pos.y].t==Square::type::item) { // we take an item
+               this->score += 2*multiplier;
+            }
             // update the new square with the player information
             this->theBoard[new_pos.x][new_pos.y].update(this->theBoard[this->player->p.x][this->player->p.x]);
             this->theBoard[this->player->p.x][this->player->p.y].setEmpty();
@@ -415,12 +486,12 @@ int main()
                 break;
             }
         }
-        //global_debug=true;
+        global_debug=true;
         //Genome myGenome(0);
         //myGenome.array[0] = Gene(0, true);
         //myGenome.array[1] = Gene(0.5, true);
-        //calculateScore(myGenome, *global_board);
-        //global_debug=false;
+        calculateScore(someGenomes[bestGenome], *global_board);
+        global_debug=false;
         cerr << "Best score selected is " << bestScore << endl;
         cerr << someGenomes[bestGenome].toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
