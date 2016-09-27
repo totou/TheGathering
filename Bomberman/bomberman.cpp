@@ -1,7 +1,7 @@
 #pragma GCC optimize "O3,omit-frame-pointer,inline"
 
-#Define True true
-#Define False false
+#define True true
+#define False false
 
 #include <iostream>
 #include <string>
@@ -24,7 +24,7 @@ const uint GLOBAL_GENOME_SAMPLE_SIZE = 50000;
 const signed char GLOBAL_MAX_WIDTH = 13;
 const signed char GLOBAL_MAX_HEIGHT = 11;
 bool global_debug = false;
-char GLOBAL_PLAYER_NUM = 4;
+const signed char GLOBAL_PLAYER_NUM = 4;
 
 struct Board;
 Board* global_board;
@@ -99,66 +99,78 @@ struct Player {
     char range;
     char cur_stock;
     char max_stock;
-    Point p;    
+	int score;
+    Point p;
     bool isAlive;
-    
+
     inline Player() = default;
     inline Player(Player const&) = default;
     inline Player(Player&&) = default;
     inline Player& operator=(Player const&) = default;
     inline Player& operator=(Player&&) = default;
-    
+
     inline Player(const char & id, const Point & p) {
         this->id = id;
         this->range = 2;
         this->cur_stock = 1;
         this->max_stock = 1;
-        this->p = p;        
+        this->p = p;
         this->isAlive = true;
     }
-    
-    inline void update(const Point & p){
-        this->p = p;        
-    }    
-    
+
+    inline void update(const char& owner_id, const Point & p){
+		this->id = owner_id;
+        this->p = p;
+    }
+
     inline bool hasBomb(){
         return this->cur_stock > 0;
-    }    
+    }
+
+    inline void increaseScore(){
+        ++this->score;
+    }
+	inline void increaseScore(char n) {
+        this->score += n;
+    }
+	inline void increaseScore(int n) {
+        this->score += n;
+    }
 };
 
 struct Bomb {
-    const char owner;
-    const char range;
-    char timer;   
-    const Point p;    
+    char owner;
+    char range;
+    char timer;
+    Point p;
 
-    
+
     inline Bomb() = default;
     inline Bomb(Bomb const&) = default;
     inline Bomb(Bomb&&) = default;
     inline Bomb& operator=(Bomb const&) = default;
     inline Bomb& operator=(Bomb&&) = default;
-    
+
     inline Bomb(const char & owner,const char & range,const char & timer, const Point & p) {
         this->owner = owner;
         this->range = range;
-        this->timer = timer;        
-        this->p = p;                
+        this->timer = timer;
+        this->p = p;
     }
-    
+
     inline void tick(){
         --this->timer;
-    }    
-    
+    }
+
     inline bool isExploding(){
         return this->timer <= 0;
-    }                    
+    }
 };
 
 struct Square {
     enum type { empty, box, box_b_range, box_b_stock, item_b_range,item_b_stock, wall};
     type t;
-    const Point p;        
+    Point p;
     bool hasPlayer;
     bool hasBomb;
 
@@ -166,16 +178,26 @@ struct Square {
     inline Square(Square&&) = default;
     inline Square& operator=(Square const&) = default;
     inline Square& operator=(Square&&) = default;
-    
+
+	inline Square() {
+        this->p = Point();
+        this->setEmpty();
+    }
     inline Square(const Point& p) {
         this->p = p;
-        this->setEmpty();        
-    }        
+        this->setEmpty();
+    }
     inline void addBomb(){
-        this->hasBomb=true;        
+        this->hasBomb=true;
+    }
+	inline void addBox(){
+        this->t=type::box;
+    }
+	inline void addWall(){
+        this->t=type::wall;
     }
     inline void setEmpty(){
-        this->t=type::empty;                
+        this->t=type::empty;
         this->hasBomb = false;
         this->hasPlayer = false;
     }
@@ -205,11 +227,11 @@ struct Square {
         return false;
     }
     inline void addPlayer() {
-        this->hasPlayer=true;        
-    }    
+        this->hasPlayer=true;
+    }
     inline void removePlayer() {
-        this->hasPlayer=false;        
-    }    
+        this->hasPlayer=false;
+    }
     inline void addItem(char param1){
         if(param1 == 1){
             if (this->t == type::box){
@@ -225,12 +247,23 @@ struct Square {
             }
         }
     }
-    inline bool hasBomb() const {
+    inline bool containsBomb() const {
         return this->hasBomb;
     }
     inline bool blocksExplosion() const {
-        if (this->t == type::wall ||            
-            this->hasBomb ||        
+        if (this->t == type::wall ||
+            this->hasBomb ||
+            this->t == type::box ||
+            this->t == type::box_b_range ||
+            this->t == type::box_b_stock ||
+            this->t == type::item_b_range ||
+            this->t == type::item_b_stock) {
+            return true;
+        }
+        return false;
+    }
+	inline bool canBeDestroyed() const {
+        if (this->hasBomb ||
             this->t == type::box ||
             this->t == type::box_b_range ||
             this->t == type::box_b_stock ||
@@ -252,7 +285,7 @@ struct Square {
         this->hasPlayer = false;
     }
     inline string toString() {
-        return "location " + this->p.toString() + " type " + to_string(this->t) + " timer " + to_string(this->timer) + " range " + to_string(this->range);
+        return "location " + this->p.toString() + " type " + to_string(this->t) + " hasPlayer " + to_string(this->hasPlayer) + " hasBomb " + to_string(this->hasBomb);
     }
 };
 
@@ -288,10 +321,12 @@ struct Gene {
 
 struct Board
 {
+	char myId;
     char height;
     char width;
-    Square theBoard[GLOBAL_MAX_WIDTH][GLOBAL_MAX_HEIGHT];    
+    Square theBoard[GLOBAL_MAX_WIDTH][GLOBAL_MAX_HEIGHT];
     Player players [GLOBAL_PLAYER_NUM];
+	Player* myPlayer = NULL;
     list<Bomb> bombs;
     uint score;
 
@@ -301,19 +336,20 @@ struct Board
     inline Board& operator=(Board const&) = default;
     inline Board& operator=(Board&&) = default;
 
-    inline Board(char w, char h){
+    inline Board(char iMyID, char w, char h){
+		this->myId = iMyID;
         this->height=h;
         this->width=w;
-        this->player == NULL;
         this->score = 0;
          for(char y= 0; y< this->height;++y){
             for(char x= 0; x< this->width;++x){
-               this->theBoard[x][y]=Square(x, y);
+               this->theBoard[x][y]=Square(Point(x, y));
             }
         }
         for(char i= 0; i< GLOBAL_PLAYER_NUM;++i){
-           this->players [i] = Player(i,Point());
-        }        
+           this->players[i] = Player(i,Point());
+        }
+		this->myPlayer = &(this->players[this->myId]);
     }
     inline Square get(int x, int y) {
         return this->theBoard[x][y];
@@ -323,116 +359,125 @@ struct Board
         for(char x =0;x<this->width;++x)
         {
             if (row[x] == '.') {
-                this->theBoard[x][i].update(Square::empty,-1,-1,-1);
+                this->theBoard[x][i].setEmpty();
             }else if (row[x] == 'X') {
-                this->theBoard[x][i].update(Square::wall,-1,-1,-1);
+                this->theBoard[x][i].addWall();
             } else {
-                this->theBoard[x][i].update(Square::box,-1,-1,-1);
+                this->theBoard[x][i].addBox();
             }
         }
     }
-    inline void init(int myId, int entityType, int owner, int x, int y, int param1, int param2)
+    inline void init(int entityType, int owner, int x, int y, int param1, int param2)
     {
-        if (entityType == 0 )//player
-        {
-            this->theBoard[x][y].addPlayer();                        
+		if (global_debug) cerr << "INIT : " << entityType << owner << x << y << param1 << param2 << endl;
+        if (entityType == 0) { // Player
+            this->theBoard[x][y].addPlayer();
             this->players[owner].update(owner,Point(x,y));
-            if(myId == owner) {
-                this->player = &(this->theBoard[x][y]);
-            }
-        }else if (entityType == 1){ //Bomb
+        } else if (entityType == 1) { //Bomb
             this->theBoard[x][y].addBomb();
-            this->bombs.insert(Bomb(owner, param2, param1, Point(x,y)));
-        }else if (entityType == 2){ // Item
+            this->bombs.push_back(Bomb(owner, param2, param1, Point(x,y)));
+        } else if (entityType == 2) { // Item
             this->theBoard[x][y].addItem(param1);
         }
-    }    
+    }
     void addBombToExplosionList(const Point & p, queue<Bomb*> &explosionList){
-        //find bomb in P
-        for(){
-            
+        // Add bombs in point that have timer > 0
+        for (list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end(); ++it) {
+            if (p.x == it->p.x && p.y == it->p.y && it->timer > 0) {
+				explosionList.push(&(*it));
+			}
         }
-        // if timer != 0
-        explisionList.push();
-        //else
-        nothing        
     }
     inline bool processBomb(const Bomb & aBomb, queue<Bomb*> &explosionList, queue<Square*> &deletedObjects) {
-        // Bombs are stopped by boxes, items and walls so far
-        // TODO See How to link desctruction to score of all players
+		// Right
         for (char x=0; x < aBomb.range && aBomb.p.x+x < this->width; ++x) {
             if (this->theBoard[aBomb.p.x+x][aBomb.p.y].blocksExplosion()) {
-                if (this->theBoard[aBomb.p.x+x][aBomb.p.y].hasBomb()){
-                    //add bomb in explisionList if timer is different than 0
-                    
+                if (this->theBoard[aBomb.p.x+x][aBomb.p.y].containsBomb()){
+                    this->addBombToExplosionList(aBomb.p, explosionList);
                 }
-                if(this->theBoard[aBomb.p.x+x][aBomb.p.y].canBeDestroyed()){
+                if (this->theBoard[aBomb.p.x+x][aBomb.p.y].canBeDestroyed()) {
                     deletedObjects.push(&(this->theBoard[aBomb.p.x+x][aBomb.p.y]));
                 }
+				if (this->theBoard[aBomb.p.x+x][aBomb.p.y].isBox()) {
+					// Give point to player
+					players[aBomb.owner].increaseScore();
+				}
                 break;
-            } 
-        }
-        //todo other direction
-        /*
-        for (char x=0; x < this->width && p.x-x >= 0; ++x) {
-            if (this->theBoard[p.x-x][p.y].blocksExplosion()) {
-                return false; // We are safe for sure
-            } else if (this->theBoard[p.x-x][p.y].t == Square::type::bomb) {
-                if (this->theBoard[p.x-x][p.y].range >= x) {
-                    return true; // We are in explosion radius
-                } else {
-                    break; // We are out of range on LEFT side
-                }
             }
-            // Else we are not sure, must continue investigating
         }
-        for (char y=0; y<this->width && p.y+y < this->width; ++y) {
-            if (this->theBoard[p.x][p.y+y].blocksExplosion()) {
-                return false; // We are safe for sure
-            } else if (this->theBoard[p.x][p.y+y].t == Square::type::bomb) {
-                if (this->theBoard[p.x][p.y+y].range >= y) {
-                    return true; // We are in explosion radius
-                } else {
-                    break; // We are out of range on DOWN side
+		// Left
+        for (char x=0; x < aBomb.range && aBomb.p.x-x >= 0; ++x) {
+            if (this->theBoard[aBomb.p.x-x][aBomb.p.y].blocksExplosion()) {
+                if (this->theBoard[aBomb.p.x-x][aBomb.p.y].containsBomb()){
+                    this->addBombToExplosionList(aBomb.p, explosionList);
                 }
+                if (this->theBoard[aBomb.p.x-x][aBomb.p.y].canBeDestroyed()) {
+                    deletedObjects.push(&(this->theBoard[aBomb.p.x-x][aBomb.p.y]));
+                }
+				if (this->theBoard[aBomb.p.x-x][aBomb.p.y].isBox()) {
+					// Give point to player
+					players[aBomb.owner].increaseScore();
+				}
+                break;
             }
-            // Else we are not sure, must continue investigating
         }
-        for (char y=0; y<this->height && p.y-y >= 0; ++y) {
-            if (this->theBoard[p.x][p.y-y].blocksExplosion()) {
-                return false; // We are safe for sure
-            } else if (this->theBoard[p.x][p.y-y].t == Square::type::bomb) {
-                if (this->theBoard[p.x][p.y-y].range >= y) {
-                    return true; // We are in explosion radius
-                } else {
-                    break; // We are out of range on UP side
+		// Down
+        for (char y=0; y < aBomb.range && aBomb.p.y+y < this->height; ++y) {
+            if (this->theBoard[aBomb.p.x][aBomb.p.y+y].blocksExplosion()) {
+                if (this->theBoard[aBomb.p.x][aBomb.p.y+y].containsBomb()){
+                    this->addBombToExplosionList(aBomb.p, explosionList);
                 }
+                if (this->theBoard[aBomb.p.x][aBomb.p.y+y].canBeDestroyed()) {
+                    deletedObjects.push(&(this->theBoard[aBomb.p.x][aBomb.p.y+y]));
+                }
+				if (this->theBoard[aBomb.p.x][aBomb.p.y+y].isBox()) {
+					// Give point to player
+					players[aBomb.owner].increaseScore();
+				}
+                break;
             }
-            // Else we are not sure, must continue investigating
-        }*/
+        }
+		// Up
+        for (char y=0; y < aBomb.range && aBomb.p.y-y >= 0; ++y) {
+            if (this->theBoard[aBomb.p.x][aBomb.p.y-y].blocksExplosion()) {
+                if (this->theBoard[aBomb.p.x][aBomb.p.y-y].containsBomb()){
+                    this->addBombToExplosionList(aBomb.p, explosionList);
+                }
+                if (this->theBoard[aBomb.p.x][aBomb.p.y-y].canBeDestroyed()) {
+                    deletedObjects.push(&(this->theBoard[aBomb.p.x][aBomb.p.y-y]));
+                }
+				if (this->theBoard[aBomb.p.x][aBomb.p.y-y].isBox()) {
+					// Give point to player
+					players[aBomb.owner].increaseScore();
+				}
+                break;
+            }
+        }
         return false; // Default we suppose we are safe
     }
     inline void bigBadaboum() {
-        // Go decrement all bomb timers        
+        // Go decrement all bomb timers
         queue<Bomb*> explosionList;
-        queue<Square*> deletedObjects;        
-        for(list<Bomb>::iterator it = this->Bombs.begin(); it != this->Bombs.end();++it){           
-            it->tick();                
+        queue<Square*> deletedObjects;
+        for(list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end();++it){
+            it->tick();
             if (it->isExploding()) {
-                explosionList.push_back(it);
-            }            
+                explosionList.push(&(*it));
+            }
         }
-        // Simultaneous explosions        
+        // Simultaneous explosions
         while(!explosionList.empty()){
-            Bomb * pBomb = explosionList.pop();
+            Bomb* pBomb = explosionList.front(); // Access 1st elem
             processBomb(*pBomb,explosionList, deletedObjects);
-        }        
+			explosionList.pop(); // Delete 1st elem
+        }
         // Cleaning the map
         while(!deletedObjects.empty()){
-            explosionList.pop()->explose();            
-        }             
+            deletedObjects.front()->explose();
+			deletedObjects.pop();
+        }
     }
-    
+
     inline Point getNext(const Gene& g, const Point& p) const
     {
         Point pres(p);
@@ -450,7 +495,7 @@ struct Board
         pres.correctBounds();
         if ( ! this->theBoard[pres.x][pres.y].canEnter() ) {
             return p;// Cannot move there, stay where we are
-        }        
+        }
         return pres;
     }
     inline uint boxInRange(const Bomb& bomb){
@@ -505,25 +550,27 @@ struct Board
 
         // cf. Experts rules for details
         // First: bombs explodes (if reach timer 0) and destroy objects
-        this->bigBadaboum();        
-        
+        this->bigBadaboum();
+
         // Treat the bomb dropped case TODO include in bigBadaboum
         if (g.bomb) {
-            this->theBoard[this->player->p.x][this->player->p.y].setBomb();
+			// Add bomb on the sqaure and in the list of bombs too
+			Bomb aBomb(this->myId, this->myPlayer->range, 8 /* Timer 8 for all new bombs */, this->myPlayer->p);
+            this->theBoard[this->myPlayer->p.x][this->myPlayer->p.y].addBomb();
             // TODO : change the behavior for the actual bomd explosion instead of anticipating
-            this->score += this->boxInRange(this->theBoard[this->player->p.x][this->player->p.y]) * multiplier;
+            this->score += this->boxInRange(aBomb) * multiplier;
 
-            if (global_debug) cerr << "Case is: " << this->theBoard[this->player->p.x][this->player->p.y].toString() << endl;
-            if (global_debug) cerr << "Player is: " << (*(this->player)).p.toString() << endl;
+            if (global_debug) cerr << "Case is: " << this->theBoard[this->myPlayer->p.x][this->myPlayer->p.y].toString() << endl;
+            if (global_debug) cerr << "Player is: " << this->players[myId].p.toString() << endl;
             if (global_debug) {
-                cerr << "Bomb will be here " << this->player->p.toString() << endl;
-                cerr << "boxInRange to " << this->boxInRange(*(this->player)) << " boxes with multiplier " << multiplier << endl;
-                cerr << "Setting bomb to " << this->player->p.toString() << endl;
+                cerr << "Bomb will be here " << this->myPlayer->p.toString() << endl;
+                cerr << "boxInRange to " << this->boxInRange(aBomb) << " boxes with multiplier " << multiplier << endl;
+                cerr << "Setting bomb to " << this->myPlayer->p.toString() << endl;
             }
         }
-        
+
         // Then: we move the player(s)
-        Point new_pos = this->getNext(g, this->player->p);
+        Point new_pos = this->getNext(g, this->myPlayer->p);
         // Treat the movement of the player
         if ((this->theBoard[new_pos.x][new_pos.y].canEnter()) &&
            new_pos.x >= 0 && new_pos.x < this->width &&
@@ -532,17 +579,15 @@ struct Board
                this->score += 2*multiplier;
             }
             // update the new square with the player information
-            this->theBoard[new_pos.x][new_pos.y].update(this->theBoard[this->player->p.x][this->player->p.x]);
-            this->theBoard[this->player->p.x][this->player->p.y].setEmpty();
-            // update the new pointer to the new player square
-            this->player = &(this->theBoard[new_pos.x][new_pos.y]);
+            this->theBoard[new_pos.x][new_pos.y].addPlayer();
+            this->theBoard[this->myPlayer->p.x][this->myPlayer->p.y].removePlayer();
         }
-        if (global_debug) {cerr << "Player moved here " << this->player->p.toString() << endl;}
+        if (global_debug) {cerr << "Player moved here " << this->players[myId].p.toString() << endl;}
 
         // New bombs finally appears
         if (g.bomb) {
             // Currently called twice, but should decrease to only this one after refactoring the above TODO
-            this->theBoard[this->player->p.x][this->player->p.y].setBomb();
+            this->theBoard[this->players[myId].p.x][this->players[myId].p.y].addBomb();
         }
     }
 
@@ -608,7 +653,7 @@ string output(const Gene& g, const Board& b){
         res += "MOVE";
     }
     res += " ";
-    res += b.getNext(g, b.player->p).toString();
+    res += b.getNext(g, b.myPlayer->p).toString();
     return res;
 }
 
@@ -624,7 +669,7 @@ int main()
     int height;
     int myId;
     cin >> width >> height >> myId; cin.ignore();
-    Board theBoard(width, height);
+    Board theBoard(myId, width, height);
     global_board = &theBoard;
     char player_num=2;
     Square* players[player_num];
@@ -633,6 +678,7 @@ int main()
     // game loop
     while (1)
     {
+		global_debug=false;
         for (int i = 0; i < height; i++)
         {
             string row;
@@ -642,24 +688,25 @@ int main()
         int entities;
         cin >> entities; cin.ignore();
         for (int i = 0; i < entities; i++) {
-            char entityType;
-            char owner;
-            char x;
-            char y;
-            char param1;
-            char param2;
+            int entityType;
+            int owner;
+            int x;
+            int y;
+            int param1;
+            int param2;
             cin >> entityType >> owner >> x >> y >> param1 >> param2; cin.ignore();
-            global_board->init(myId, entityType, owner, x, y, param1, param2);
+            global_board->init(entityType, owner, x, y, param1, param2);
         }
         Timer timer = Timer(first_turn);
         global_board->toString();
+		global_debug=false;
 
         Genome someGenomes[GLOBAL_GENOME_SAMPLE_SIZE];
         uint bestGenome=0;
         uint bestScore=0;
         for (uint i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
             uint newScore=0;
-            someGenomes[i] = Genome(next_bomb);
+            someGenomes[i] = Genome(next_bomb, global_board->myPlayer->cur_stock);
             newScore = calculateScore(someGenomes[i], *global_board);
             if (newScore > bestScore) {
                 bestScore = newScore;
