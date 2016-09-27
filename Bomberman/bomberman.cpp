@@ -384,6 +384,7 @@ struct Board
         // Add bombs in point that have timer > 0
         for (list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end(); ++it) {
             if (p.x == it->p.x && p.y == it->p.y && it->timer > 0) {
+				it->timer = 0;
 				explosionList.push(&(*it));
 			}
         }
