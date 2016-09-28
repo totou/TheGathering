@@ -768,8 +768,8 @@ int main()
         global_debug=false;
 
         Genome someGenomes[GLOBAL_GENOME_SAMPLE_SIZE];
-        int bestGenome=0;
-        int bestScore=0;
+        int bestGenome=-1;
+        int bestScore=INT_MIN;
         for (int i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
             int newScore=0;
             someGenomes[i] = Genome();
