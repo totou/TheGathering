@@ -738,9 +738,15 @@ int calculateScore(const Genome& genome, Board board)
 struct Evolution {
     priority_queue<Genome> theGenomes;
     
+    inline Evolution() = default;
+    inline Evolution(Evolution const&) = default;
+    inline Evolution(Evolution&&) = default;
+    inline Evolution& operator=(Evolution const&) = default;
+    inline Evolution& operator=(Evolution&&) = default;
+
     inline void init() {
         for (uint i=0; i<GLOBAL_POPULATION_SIZE; ++i) {
-            this->theGenomes.push(Genome());
+            calculateScoreAndInsert(Genome());
         }
     }
 
@@ -787,23 +793,15 @@ struct Evolution {
         }
     }
 
-    inline void calculateScoreAndInsert(Genome& g) {
-        for (int i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
-            int newScore=INT_MIN;
-            newScore = calculateScore(g, *global_board);
-            g.score = newScore;
-            this->theGenomes.push(g);
-            if (global_timer->isTimesUp()) {
-                cerr << "We calculated " << i << " genomes during this evolution before time out" << endl;
-                break;
-            }
-        }
+    inline void calculateScoreAndInsert(Genome g) {// Not sure about putting a ref here or not
+        g.score = calculateScore(g, *global_board);
+        this->theGenomes.push(g);
     }
 
     inline void evolveOnce() {
         Genome theNewGenomes[GLOBAL_POPULATION_SIZE];
         Genome bestGenomes[GLOBAL_POPULATION_SIZE/10];
-        uint last = 0;
+        uint last = 0; // last = GLOBAL_POPULATION_SIZE/10 (best) + 8*GLOBAL_POPULATION_SIZE/10 (crossed) + GLOBAL_POPULATION_SIZE/10 (mutant)
         // Keep the 10 best percent
         while (!theGenomes.empty() && last < GLOBAL_POPULATION_SIZE/10) {
             bestGenomes[last++] = theGenomes.top(); // Get elem
@@ -887,7 +885,12 @@ int main()
         //global_board->toString();
         global_debug=false;
 
-        Genome someGenomes[GLOBAL_GENOME_SAMPLE_SIZE];
+        Evolution evol();
+        evol.init();
+        evol.evolve(5);// let's start with 5 evolutions
+        Genome& bestGenome = evol.theGenomes.top();
+        int bestScore=INT_MIN;
+        /*Genome someGenomes[GLOBAL_GENOME_SAMPLE_SIZE];
         int bestGenome=-1;
         int bestScore=INT_MIN;
         for (int i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
@@ -902,21 +905,21 @@ int main()
                 cerr << "We calculated " << i << " genomes before time out" << endl;
                 break;
             }
-        }
+        }*/
         global_debug=true;
         //Genome myGenome(0);
         //myGenome.array[0] = Gene(0, true);
         //myGenome.array[1] = Gene(0.5, true);
-        cerr << "PLayer" << global_board->players[global_board->myId].toString() << endl;
-        bestScore = calculateScore(someGenomes[bestGenome], *global_board);
+        cerr << "Player" << global_board->players[global_board->myId].toString() << endl;
+        bestScore = calculateScore(bestGenome, *global_board);
         global_debug=false;
         cerr << "Best score selected is " << bestScore << endl;
-        cerr << someGenomes[bestGenome].toString() << endl;
+        cerr << bestGenome.toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
 
-        cout << output(someGenomes[bestGenome].array[0], *global_board) << endl;
+        cout << output(bestGenome.array[0], *global_board) << endl;
         //apply first gene of best genome to the board
-        global_board->update(someGenomes[bestGenome].array[0], GLOBAL_GENOME_SIZE);
+        global_board->update(bestGenome.array[0], GLOBAL_GENOME_SIZE);
     }
 }
