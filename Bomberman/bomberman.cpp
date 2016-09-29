@@ -704,7 +704,7 @@ struct Genome {
     inline Genome(Genome&&) = default;
     inline Genome& operator=(Genome const&) = default;
     inline Genome& operator=(Genome&&) = default;
-    inline bool operator<(const Genome& g2) {
+    inline bool operator<(const Genome& g2) const {
         if (this->score < g2.score) {
             return true;
         } else {
