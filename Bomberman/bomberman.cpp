@@ -737,6 +737,12 @@ int calculateScore(const Genome& genome, Board board)
 
 struct Evolution {
     priority_queue<Genome> theGenomes;
+    
+    inline void init() {
+        for (uint i=0; i<GLOBAL_POPULATION_SIZE; ++i) {
+            this->theGenomes.push(Genome());
+        }
+    }
 
     inline Gene crossGenes(const Gene& g1, const Gene& g2) {
         float move;
