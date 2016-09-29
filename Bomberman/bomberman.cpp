@@ -711,7 +711,7 @@ struct Genome {
             return false;
         }
     }
-    inline string toString(){
+    inline string toString() const {
         string res = "";
         for (int i =0;i<GLOBAL_GENOME_SIZE;++i){
             res += this->array[i].toString() + "\n";
@@ -885,10 +885,10 @@ int main()
         //global_board->toString();
         global_debug=false;
 
-        Evolution evol();
+        Evolution evol = Evolution();
         evol.init();
         evol.evolve(5);// let's start with 5 evolutions
-        Genome& bestGenome = evol.theGenomes.top();
+        const Genome& bestGenome = evol.theGenomes.top();
         int bestScore=INT_MIN;
         /*Genome someGenomes[GLOBAL_GENOME_SAMPLE_SIZE];
         int bestGenome=-1;
@@ -913,7 +913,7 @@ int main()
         cerr << "Player" << global_board->players[global_board->myId].toString() << endl;
         bestScore = calculateScore(bestGenome, *global_board);
         global_debug=false;
-        cerr << "Best score selected is " << bestScore << endl;
+        cerr << "Best score selected is " << bestGenome.score << endl;
         cerr << bestGenome.toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
