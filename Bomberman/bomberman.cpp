@@ -26,9 +26,13 @@ const signed char GLOBAL_MAX_WIDTH = 13;
 const signed char GLOBAL_MAX_HEIGHT = 11;
 bool global_debug = false;
 const signed char GLOBAL_PLAYER_NUM = 4;
+const float GLOBAL_MUTATION_RATE = 0.15;
+const uint GLOBAL_POPULATION_SIZE = 1000;
 
 struct Board;
 Board* global_board;
+struct Timer;
+Timer* global_timer;
 
 struct Timer{
     chrono::time_point<chrono::system_clock> end;
@@ -51,6 +55,7 @@ struct Timer{
         return std::chrono::system_clock::now() > this->end;
     }
 };
+
 
 struct Point
 {
@@ -147,12 +152,12 @@ struct Player {
     inline void kill() {
         this->isAlive = false;
     }
-    inline bool operator==(const Player& player) const {        
+    inline bool operator==(const Player& player) const {
         return  this->id == player.id ;
     }
     inline string toString() const
     {
-        return " id: " + to_string(this->id) + 
+        return " id: " + to_string(this->id) +
                " range: " + to_string(this->range) +
                " cur_stock: " + to_string(this->cur_stock) +
                " score: " + to_string(this->score) +
@@ -188,7 +193,7 @@ struct Bomb {
     inline bool isExploding(){
         return this->timer <= 0;
     }
-    inline bool operator==(const Bomb& b) const {        
+    inline bool operator==(const Bomb& b) const {
         return  this->owner == b.owner && this->p == b.p;
     }
 };
@@ -329,14 +334,25 @@ struct Gene {
     inline Gene& operator=(Gene&&) = default;
 
     inline Gene () {
-        this->move = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);    
+        this->move = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
         if(static_cast <float> (rand()) / static_cast <float> (RAND_MAX) > 0.50){
-            this->bomb = true;    
+            this->bomb = true;
         }else{
-            this->bomb = false;            
+            this->bomb = false;
         }
     }
     inline Gene(float m, bool b) : move(m), bomb(b) {}
+
+    inline void mutateMove() {
+        this->move = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+    }
+    inline void mutateBomb() {
+        if (static_cast <float> (rand()) / static_cast <float> (RAND_MAX) > 0.50) {
+            this->bomb = true;
+        } else {
+            this->bomb = false;
+        }
+    }
 
     inline string toString() const {
         string dir = ".";
@@ -362,7 +378,7 @@ struct Board
     char height;
     char width;
     Square theBoard[GLOBAL_MAX_WIDTH][GLOBAL_MAX_HEIGHT];
-    Player players [GLOBAL_PLAYER_NUM];    
+    Player players [GLOBAL_PLAYER_NUM];
     list<Bomb> bombs;
     int score;
 
@@ -384,7 +400,7 @@ struct Board
         }
         for(char i= 0; i< GLOBAL_PLAYER_NUM;++i){
            this->players[i] = Player(i,Point());
-        }        
+        }
     }
     inline Square get(int x, int y) {
         return this->theBoard[x][y];
@@ -417,9 +433,9 @@ struct Board
     }
     inline void increaseScore(int n) {
         // Only increase if we are not dead
-        this->score += n;        
+        this->score += n;
     }
-    inline void killPlayersOnSquare(const Point& p) {                
+    inline void killPlayersOnSquare(const Point& p) {
         for (char i=0; i<GLOBAL_PLAYER_NUM ; ++i) {
             if (this->players[i].p == p) {
                 // Then player is dead
@@ -428,9 +444,9 @@ struct Board
         }
     }
     inline void addBombToExplosionList(const Point & p, queue<Bomb*> &explosionList){
-        // Add bombs in point that have timer > 0        
-        for (list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end(); ++it) {            
-            if (it->p == p && it->timer > 0) {                
+        // Add bombs in point that have timer > 0
+        for (list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end(); ++it) {
+            if (it->p == p && it->timer > 0) {
                 it->timer = 0;
                 explosionList.push(&(*it));
             }
@@ -503,8 +519,8 @@ struct Board
         }
         //add bomb to player stock
         ++(this->players[aBomb.owner].reloading_stock);
-        //remove bomb from board 
-        if (this->theBoard[aBomb.p.x][aBomb.p.y].hasPlayer) {         
+        //remove bomb from board
+        if (this->theBoard[aBomb.p.x][aBomb.p.y].hasPlayer) {
             this->killPlayersOnSquare(aBomb.p);
         }
         deletedObjects.push(&(this->theBoard[aBomb.p.x][aBomb.p.y]));
@@ -518,7 +534,7 @@ struct Board
         queue<Bomb*> explosionList;
         queue<Square*> deletedObjects;
         for(list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end();++it){
-            it->tick();            
+            it->tick();
             if (it->isExploding()) {
                 explosionList.push(&(*it));
             }
@@ -532,8 +548,8 @@ struct Board
             //clean bomb list
         }
         // Cleaning the map
-        while(!deletedObjects.empty()){            
-            Square* pSquare = deletedObjects.front();            
+        while(!deletedObjects.empty()){
+            Square* pSquare = deletedObjects.front();
             if (global_debug) cerr << "Clean Board " << pSquare->toString() << endl;
             if (pSquare->hasPlayer) {
                 if (global_debug) cerr << "Die you scum " << endl;
@@ -619,16 +635,16 @@ struct Board
         int score_inc = this->players[this->myId].score;
         this->bigBadaboum();
         score_inc = this->players[this->myId].score - score_inc;
-        if(this->players[this->myId].isAlive){            
+        if(this->players[this->myId].isAlive){
             // Treat the bomb dropped case TODO include in bigBadaboum
-            if (global_debug) {cerr << "Stock before planting " << to_string(this->players[this->myId].cur_stock) << endl;}            
+            if (global_debug) {cerr << "Stock before planting " << to_string(this->players[this->myId].cur_stock) << endl;}
             if (g.bomb && this->players[this->myId].cur_stock > 0 && !this->theBoard[this->players[this->myId].p.x][this->players[this->myId].p.y].hasBomb) {
-                // Add bomb on the square and in the list of bombs too                                
-                this->addBomb(this->players[this->myId]);                                    
+                // Add bomb on the square and in the list of bombs too
+                this->addBomb(this->players[this->myId]);
                 this->increaseScore(-1);
             }
-            if (global_debug) {cerr << "Stock after planting " << to_string(this->players[this->myId].cur_stock) << endl;}        
-            
+            if (global_debug) {cerr << "Stock after planting " << to_string(this->players[this->myId].cur_stock) << endl;}
+
             this->increaseScore(score_inc * multiplier);
             if (global_debug) cerr << "Player is: " << this->players[myId].p.toString() << endl;
             //if (global_debug) cerr << "Square ok: " << this->theBoard[this->players[myId].p.x][this->players[myId].p.y].hasPlayer << endl;
@@ -645,20 +661,20 @@ struct Board
                        if(this->theBoard[new_pos.x][new_pos.y].t == Square::type::item_b_range){
                            ++this->players[this->myId].range;
                        }else{
-                           ++this->players[this->myId].cur_stock;                           
+                           ++this->players[this->myId].cur_stock;
                        }
                        this->theBoard[new_pos.x][new_pos.y].removeBonus();
                     }
                     // update the new square with the player information
                     this->theBoard[this->players[this->myId].p.x][this->players[this->myId].p.y].removePlayer();
-                    this->theBoard[new_pos.x][new_pos.y].addPlayer();                
+                    this->theBoard[new_pos.x][new_pos.y].addPlayer();
                     //update the player
                     this->players[this->myId].p.x = new_pos.x;
                     this->players[this->myId].p.y = new_pos.y;
                 }
-            } 
+            }
             this->players[this->myId].reload();
-            //if (global_debug) {cerr << "Player moved " << this->players[myId].p.toString() << endl;}                
+            //if (global_debug) {cerr << "Player moved " << this->players[myId].p.toString() << endl;}
         }else {
             this->score = INT_MIN;
         }
@@ -669,7 +685,7 @@ struct Board
         this->bombs.push_back(Bomb(pyro.id, pyro.range, 8 /* Timer 8 for all new bombs */, pyro.p));
         this->theBoard[pyro.p.x][pyro.p.y].addBomb();
     }
-    
+
     inline void toString(){
         for(char y= 0; y< this->height;++y){
             for(char x= 0; x< this->width;++x){
@@ -681,12 +697,20 @@ struct Board
 };
 
 struct Genome {
+    int score = 0;
     Gene array[GLOBAL_GENOME_SIZE];
     inline Genome() = default;
     inline Genome(Genome const&) = default;
     inline Genome(Genome&&) = default;
     inline Genome& operator=(Genome const&) = default;
-    inline Genome& operator=(Genome&&) = default;    
+    inline Genome& operator=(Genome&&) = default;
+    inline bool operator<(const Genome& g2) {
+        if (this->score < g2.score) {
+            return true;
+        } else {
+            return false;
+        }
+    }
     inline string toString(){
         string res = "";
         for (int i =0;i<GLOBAL_GENOME_SIZE;++i){
@@ -697,7 +721,6 @@ struct Genome {
 };
 
 
-
 int calculateScore(const Genome& genome, Board board)
 {
     for (char i=0; i<GLOBAL_GENOME_SIZE; ++i) {
@@ -706,10 +729,100 @@ int calculateScore(const Genome& genome, Board board)
         if (global_debug) {cerr << "New score: " << board.score << endl;}
         if(board.score == INT_MIN) {
             break;
-        }        
+        }
     }
     return board.score;
 }
+
+
+struct Evolution {
+    priority_queue<Genome> theGenomes;
+
+    inline Gene crossGenes(const Gene& g1, const Gene& g2) {
+        float move;
+        bool bomb;
+        if (static_cast <float> (rand()) / static_cast <float> (RAND_MAX) < 0.5) {
+            // Keep g1
+            move = g1.move;
+        } else {
+            // Keep g2
+            move = g1.move;
+        }
+        if (static_cast <float> (rand()) / static_cast <float> (RAND_MAX) < 0.5) {
+            // Keep g1
+            bomb = g1.bomb;
+        } else {
+            // Keep g2
+            bomb = g2.bomb;
+        }
+        return Gene(move, bomb);
+    }
+
+    inline void crossGenenome(const Genome& g1, const Genome& g2, Genome& gres) {
+        for (char i=0; i<GLOBAL_GENOME_SIZE; ++i) {
+            gres.array[i] = this->crossGenes(g1.array[i], g2.array[i]);
+        }
+    }
+
+    inline Gene& mutateGene(const Gene& g) {
+        Gene mutant(g);
+        if (static_cast <float> (rand()) / static_cast <float> (RAND_MAX) < GLOBAL_MUTATION_RATE) {
+            mutant.mutateMove();
+        }
+        if (static_cast <float> (rand()) / static_cast <float> (RAND_MAX) < GLOBAL_MUTATION_RATE) {
+            mutant.mutateBomb();
+        }
+        return mutant;
+    }
+
+    inline void mutateGenenome(const Genome& g1, Genome& gres) {
+        for (char i=0; i<GLOBAL_GENOME_SIZE; ++i) {
+            gres.array[i] = this->mutateGene(g1.array[i]);
+        }
+    }
+
+    inline void calculateScoreAndInsert(Genome& g) {
+        for (int i=0; i<GLOBAL_GENOME_SAMPLE_SIZE; ++i) {
+            int newScore=INT_MIN;
+            newScore = calculateScore(g, *global_board);
+            g.score = newScore;
+            this->theGenomes.push(g);
+            if (global_timer->isTimesUp()) {
+                cerr << "We calculated " << i << " genomes during this evolution before time out" << endl;
+                break;
+            }
+        }
+    }
+
+    inline void evolveOnce() {
+        Genome theNewGenomes[GLOBAL_POPULATION_SIZE];
+        Genome bestGenomes[GLOBAL_POPULATION_SIZE/10];
+        uint last = 0;
+        // Keep the 10 best percent
+        while (!theGenomes.empty()) {
+            bestGenomes[last++] = theGenomes.top(); // Get elem
+            theGenomes.top(); // Delete it
+        }
+        // Cross and mutate
+        for (uint i=0; i<GLOBAL_POPULATION_SIZE/10 - 8; ++i) {
+            // Add the cross to the new population
+            for (char j=0; j<8; ++j) {
+                this->crossGenenome(bestGenomes[i], bestGenomes[i+j], theNewGenomes[last++]);
+                // We have a new genome with a new score
+                this->calculateScoreAndInsert(theNewGenomes[last-1]);
+            }
+            this->mutateGenenome(bestGenomes[i], theNewGenomes[last++]);
+            // We have a new genome with a new score
+            this->calculateScoreAndInsert(theNewGenomes[last-1]);
+        }
+    }
+
+    inline void evolve(char n) {
+        for (char i=0; i<n; ++i) {
+            this->evolveOnce();
+        }
+    }
+};
 
 string output(const Gene& g, const Board& b){
     string res = "";
@@ -729,7 +842,7 @@ string output(const Gene& g, const Board& b){
  **/
 int main()
 {
-    Timer  * timer;
+    Timer * global_timer;
     bool first_turn = false;
     int width;
     int height;
@@ -764,6 +877,7 @@ int main()
             global_board->init(entityType, owner, x, y, param1, param2);
         }
         Timer timer = Timer(first_turn);
+        global_timer = &timer;
         //global_board->toString();
         global_debug=false;
 
@@ -778,7 +892,7 @@ int main()
                 bestScore = newScore;
                 bestGenome = i;
             }
-            if (timer.isTimesUp()) {
+            if (global_timer->isTimesUp()) {
                 cerr << "We calculated " << i << " genomes before time out" << endl;
                 break;
             }
@@ -791,13 +905,12 @@ int main()
         bestScore = calculateScore(someGenomes[bestGenome], *global_board);
         global_debug=false;
         cerr << "Best score selected is " << bestScore << endl;
-        cerr << someGenomes[bestGenome].toString() << endl;        
+        cerr << someGenomes[bestGenome].toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        
-        cout << output(someGenomes[bestGenome].array[0], *global_board) << endl;  
+
+        cout << output(someGenomes[bestGenome].array[0], *global_board) << endl;
         //apply first gene of best genome to the board
         global_board->update(someGenomes[bestGenome].array[0], GLOBAL_GENOME_SIZE);
     }
 }
-
