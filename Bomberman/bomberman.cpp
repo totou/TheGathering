@@ -799,7 +799,7 @@ struct Evolution {
         Genome bestGenomes[GLOBAL_POPULATION_SIZE/10];
         uint last = 0;
         // Keep the 10 best percent
-        while (!theGenomes.empty()) {
+        while (!theGenomes.empty() && last < GLOBAL_POPULATION_SIZE/10) {
             bestGenomes[last++] = theGenomes.top(); // Get elem
             theGenomes.top(); // Delete it
         }
