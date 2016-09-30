@@ -325,7 +325,7 @@ struct Square {
            this->setEmpty();
         }
     }
-    inline string toString() {
+    inline string toString() const {
         return "location " + this->p.toString() + " type " + to_string(this->t);
     }
 };
@@ -617,7 +617,7 @@ struct Board
         this->bombs.remove(aBomb);
         return false; // Default we suppose we are safe
     }
-    inline void bigBadaboum() {
+    inline void bigBadaboum(myQueue<Square*>& deleteBox) {
         //if (global_debug) cerr << "bigBadaboum " << this->bombs.size() << endl;
         // Go decrement all bomb timers
         myQueue<Bomb*> explosionList;
@@ -645,7 +645,11 @@ struct Board
                 //if (global_debug) cerr << "Die you scum " << endl;
                 this->killPlayersOnSquare(pSquare->p);
             }
-            pSquare->explose();
+            if (!pSquare->isBox()) {
+                pSquare->explose();
+            } else {
+                deleteBox.push(pSquare);
+            }
             deletedObjects.pop();
         }
     }
@@ -668,6 +672,24 @@ struct Board
         if ( ! this->theBoard[pres.x][pres.y].canEnter() ) {
             return p;// Cannot move there, stay where we are
         }
+        return pres;
+    }
+
+    inline Point getNextWithoutCheck(const Gene& g, const Point& p) const
+    {
+        Point pres(p);
+        if (g.move <0.2) {
+            return p;
+        } else if (g.move >=0.2 && g.move < 0.4) {
+            pres.x += 1;
+        } else if (g.move >= 0.4 && g.move < 0.6) {
+            pres.y += 1;
+        } else if (g.move >= 0.6 && g.move < 0.8) {
+            pres.x -= 1;
+        } else if (g.move >= 0.8) {
+            pres.y -= 1;
+        }
+        pres.correctBounds();
         return pres;
     }
     // inline uint boxInRange(const Bomb& bomb){
@@ -723,7 +745,8 @@ struct Board
         // cf. Experts rules for details
         // First: bombs explodes (if reach timer 0) and destroy objects
         int score_inc = this->players[id].score;
-        this->bigBadaboum();
+        myQueue<Square*> deleteBox;
+        this->bigBadaboum(deleteBox);
         score_inc = this->players[id].score - score_inc;
         if(this->players[id].isAlive){
             // Treat the bomb dropped case TODO include in bigBadaboum
@@ -765,8 +788,15 @@ struct Board
             }
             this->players[id].reload();
             //if (global_debug) {cerr << "Player moved " << this->players[myId].p.toString() << endl;}
-        }else {
+        } else {
             this->score = INT_MIN;
+        }
+        // Clean boxes
+        while (!deleteBox.empty()) {
+            Square* pSquare = deleteBox.front();
+            //if (global_debug) cerr << "Clean Board " << pSquare->toString() << endl;
+            pSquare->explose();
+            deleteBox.pop();
         }
     }
 
@@ -918,7 +948,7 @@ string output(const int& id, const Gene& g, const Board& b){
         res += "MOVE";
     }
     res += " ";
-    res += b.getNext(g, b.players[id].p).toString();
+    res += b.getNextWithoutCheck(g, b.players[id].p).toString();
     return res;
 }
 
@@ -982,13 +1012,14 @@ int main()
         global_debug=true;
         //cerr << "PLayer" << global_board->players[global_board->myId].toString() << endl;
         bestScore = calculateScore(myId, myBestGenome, *global_board);
-        global_debug=false;
+
         //cerr << "Best score selected is " << myBestGenome.score << endl;
         //cerr << myBestGenome.toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
 
         cout << output(myId, myBestGenome.array[0], *global_board) << endl;
+        global_debug=false;
         score_cumul += global_compute;
         cerr << "average:" << (score_cumul/turn) << endl;
         //apply first gene of best genome to the board
