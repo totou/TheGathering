@@ -18,7 +18,7 @@
 using namespace std;
 
 const signed char GLOBAL_TURN_TIME = 100;
-const signed char GLOBAL_TURN_TIME_MAX = 90;
+const signed char GLOBAL_TURN_TIME_MAX = 93;
 const int GLOBAL_TURN_TIME_MAX_FIRST_TURN = 450;
 const signed char GLOBAL_GENOME_SIZE = 16;
 const uint GLOBAL_GENOME_SAMPLE_SIZE = 50000;
@@ -27,7 +27,7 @@ const signed char GLOBAL_MAX_HEIGHT = 11;
 bool global_debug = false;
 const signed char GLOBAL_PLAYER_NUM = 4;
 const float GLOBAL_MUTATION_RATE = 0.15;
-const uint GLOBAL_POPULATION_SIZE = 1000;
+const uint GLOBAL_POPULATION_SIZE = 2000;
 
 uint global_compute = 0;
 
@@ -402,6 +402,15 @@ struct Board
     inline Square get(int x, int y) {
         return this->theBoard[x][y];
     }
+    inline list<char> getIDsOfPlayers() {
+        list<char> res;
+        for(char i=0; i< GLOBAL_PLAYER_NUM;++i){
+           if ( !(this->players[i].p == Point()) ) {
+               res.push_back(i);
+           }
+        }
+        return res;
+    }
     inline void init(int i, string row)
     {
         for(char x =0;x<GLOBAL_MAX_WIDTH;++x)
@@ -742,27 +751,27 @@ struct Evolution {
     inline Evolution& operator=(Evolution const&) = default;
     inline Evolution& operator=(Evolution&&) = default;
 
-    inline Evolution(const int& id) {
-        for (uint i=0; i<GLOBAL_POPULATION_SIZE; ++i) {
+    inline Evolution(const int& id, uint max) {
+        for (uint i=0; i<max && !(global_timer->isTimesUp()); ++i) {
             calculateScoreAndInsert(id, Genome());
         }
     }
 
-    inline Gene crossGenes(const Gene& g1, const Gene& g2) {        
+    inline Gene crossGenes(const Gene& g1, const Gene& g2) {
         float gene_proba = static_cast <float> (rand()) / static_cast <float> (RAND_MAX) ;
         if (gene_proba < 0.4) {
             // Keep g1
-            return Gene(g1);            
+            return Gene(g1);
         } else if (gene_proba < 0.8) {
-            // Keep g2            
+            // Keep g2
             return Gene(g2);
         } else if (gene_proba < 0.85) {
             return Gene(g1.move * g2.move, g1.bomb || g2.bomb);
-        } else if (gene_proba < 0.90) {    
+        } else if (gene_proba < 0.90) {
             return Gene(g1.move * g2.move, g1.bomb && g2.bomb);
         } else {
             return Gene();
-        }           
+        }
     }
 
     inline void crossGenenome(const Genome& g1, const Genome& g2, Genome& gres) {
@@ -770,9 +779,9 @@ struct Evolution {
             gres.array[i] = this->crossGenes(g1.array[i], g2.array[i]);
         }
     }
-    
+
     inline void calculateScoreAndInsert(const int& id, Genome g) {// Not sure about putting a ref here or not
-        g.score = calculateScore(id, g, *global_board);        
+        g.score = calculateScore(id, g, *global_board);
         this->theGenomes.push(g);
         ++global_compute;
     }
@@ -796,19 +805,19 @@ struct Evolution {
         }
         //TODO may be add pure random gene
         //cerr << "generate new pop " << endl;
-        for (/*last alredy set*/; last < GLOBAL_POPULATION_SIZE ; ++last) {
-            int index_genome1 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_POPULATION_SIZE/100)) ;            
-            int index_genome2 = int((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_POPULATION_SIZE/100)) ;            
+        for (/*last alredy set*/; last < GLOBAL_POPULATION_SIZE && !(global_timer->isTimesUp()); ++last) {
+            int index_genome1 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_POPULATION_SIZE/100)) ;
+            int index_genome2 = int((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_POPULATION_SIZE/100)) ;
             this->crossGenenome(bestGenomes[index_genome1], bestGenomes[index_genome2], theNewGenomes[last]);
             // We have a new genome with a new score
             this->calculateScoreAndInsert(id, theNewGenomes[last]);
-        }               
+        }
     }
 
-    inline void evolve(const int& id) {                
-        while(!(global_timer->isTimesUp())){            
+    inline void evolve(const int& id) {
+        while(!(global_timer->isTimesUp())){
             this->evolveOnce(id);
-        }        
+        }
     }
 };
 
@@ -829,7 +838,7 @@ string output(const int& id, const Gene& g, const Board& b){
  * the standard input according to the problem statement.
  **/
 int main()
-{    
+{
     bool first_turn = false;
     int width;
     int height;
@@ -839,8 +848,6 @@ int main()
     cin >> width >> height >> myId; cin.ignore();
     Board theBoard = Board();
     global_board = &theBoard;
-    char player_num=2;
-    Square* players[player_num];
     // game loop
     while (1)
     {
@@ -866,29 +873,38 @@ int main()
             global_board->init(entityType, owner, x, y, param1, param2);
         }
         Timer timer = Timer(first_turn);
-        global_timer = &timer;        
+        global_timer = &timer;
         //global_board->toString();
-        global_debug=false;        
-        Evolution evol(myId);            
-        evol.evolve(myId);// let's start with 5 evolutions
-        const Genome& bestGenome = evol.theGenomes.top();
-        int bestScore=INT_MIN; 
-        global_debug=true;        
-        //cerr << "PLayer" << global_board->players[global_board->myId].toString() << endl;
-        bestScore = calculateScore(myId, bestGenome, *global_board);
         global_debug=false;
-        //cerr << "Best score selected is " << bestGenome.score << endl;
-        //cerr << bestGenome.toString() << endl;
+        Genome bestGenomes[GLOBAL_PLAYER_NUM];
+        list<char> playersID = global_board->getIDsOfPlayers();
+        // TODO uncomment to calculate scores for others
+        /*for (list<char>::const_iterator it = playersID.end(); it != playersID.end(); ++it) {
+            if (*it != myId) {
+                // Calculate genomes for others also
+                bestGenomes[*it] = Evolution(*it, 1000).theGenomes.top(); // Does not evolve, only random here at first
+            }
+        }*/
+        Evolution evol(myId, GLOBAL_POPULATION_SIZE*3);
+        evol.evolve(myId);
+        bestGenomes[myId] = evol.theGenomes.top();// Evolve as much as possible
+        const Genome& myBestGenome = bestGenomes[myId];
+        int bestScore=INT_MIN;
+        global_debug=true;
+        //cerr << "PLayer" << global_board->players[global_board->myId].toString() << endl;
+        bestScore = calculateScore(myId, myBestGenome, *global_board);
+        global_debug=false;
+        //cerr << "Best score selected is " << myBestGenome.score << endl;
+        //cerr << myBestGenome.toString() << endl;
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
 
-        cout << output(myId, bestGenome.array[0], *global_board) << endl;
+        cout << output(myId, myBestGenome.array[0], *global_board) << endl;
         score_cumul += global_compute;
         cerr << "average:" << (score_cumul/turn) << endl;
         //apply first gene of best genome to the board
-        global_board->update(myId,bestGenome.array[0], GLOBAL_GENOME_SIZE);
+        global_board->update(myId,myBestGenome.array[0], GLOBAL_GENOME_SIZE);
         ++turn;
         global_compute = 0;
     }
 }
-
