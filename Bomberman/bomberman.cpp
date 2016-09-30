@@ -171,6 +171,8 @@ struct Bomb {
     char range;
     char timer;
     Point p;
+    Bomb* previous_bomb = NULL;
+    Bomb* next_bomb = NULL;
 
 
     inline Bomb() = default;
@@ -375,6 +377,87 @@ struct Gene {
     }
 };
 
+template <typename T>
+struct myQueue
+{
+    T tab[1000]; // Should be more than enough
+    uint first=0;
+    uint next=0;
+
+    inline myQueue(myQueue const&) = default;
+    inline myQueue(myQueue&&) = default;
+    inline myQueue& operator=(myQueue const&) = default;
+    inline myQueue& operator=(myQueue&&) = default;
+
+    inline myQueue() {
+        for (uint i=0; i<1000; ++i) {
+            tab[i] = NULL;
+        }
+        this->first=0;
+        this->next=0;
+    }
+
+    inline bool empty() {
+        return (this->next - this->first == 0);
+    }
+    inline T front() {
+        return this->tab[this->first];
+    }
+    inline T front_and_pop() {
+        ++this->first;
+        return this->tab[this->first-1];
+    }
+    inline void pop() {
+        ++this->first;
+    }
+    inline void push(T pBomb) {
+        this->tab[next] = pBomb;
+        ++this->next;
+    }
+
+};
+
+template <typename T>
+struct myList
+{
+    T tab[100]; // Should be more than enough
+    uint first=0;
+    uint next=0;
+
+    inline myList(myList const&) = default;
+    inline myList(myList&&) = default;
+    inline myList& operator=(myList const&) = default;
+    inline myList& operator=(myList&&) = default;
+
+    inline myList() {
+        for (uint i=0; i<100; ++i) {
+            tab[i] = NULL;
+        }
+        this->first=0;
+        this->next=0;
+    }
+
+    inline bool empty() {
+        return (this->next - this->first == 0);
+    }
+    inline T getNext() {
+        return this->tab[this->first];
+        ++this->first;
+    }
+    inline void push_back(T pBomb) {
+        this->tab[next] = pBomb;
+        this->tab[next]->previous_bomb = &(this->tab[next-1]);
+        this->tab[next-1]->next_bomb = &(this->tab[next]);
+        ++this->next;
+    }
+    inline void remove(T pBomb) {
+        pBomb->previous_bomb->next_bomb = pBomb->next_bomb;
+        pBomb->next_bomb->previous_bomb = pBomb->previous_bomb;
+        pBomb->previous_bomb = NULL;
+        pBomb->next_bomb = NULL;
+    }
+
+};
 
 struct Board
 {
@@ -449,7 +532,7 @@ struct Board
             }
         }
     }
-    inline void addBombToExplosionList(const Point & p, queue<Bomb*> &explosionList){
+    inline void addBombToExplosionList(const Point & p, myQueue<Bomb*> &explosionList){
         // Add bombs in point that have timer > 0
         for (list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end(); ++it) {
             if (it->p == p && it->timer > 0) {
@@ -458,7 +541,7 @@ struct Board
             }
         }
     }
-    inline bool processBomb(const Bomb & aBomb, queue<Bomb*> &explosionList, queue<Square*> &deletedObjects) {
+    inline bool processBomb(const Bomb & aBomb, myQueue<Bomb*> &explosionList, myQueue<Square*> &deletedObjects) {
         // Right
         for (char x=1; x < aBomb.range && aBomb.p.x+x < GLOBAL_MAX_WIDTH; ++x) {
             if (this->theBoard[aBomb.p.x+x][aBomb.p.y].canBeDestroyed()) {
@@ -537,14 +620,15 @@ struct Board
     inline void bigBadaboum() {
         //if (global_debug) cerr << "bigBadaboum " << this->bombs.size() << endl;
         // Go decrement all bomb timers
-        queue<Bomb*> explosionList;
-        queue<Square*> deletedObjects;
+        myQueue<Bomb*> explosionList;
+        myQueue<Square*> deletedObjects;
         for(list<Bomb>::iterator it = this->bombs.begin(); it != this->bombs.end();++it){
             it->tick();
             if (it->isExploding()) {
                 explosionList.push(&(*it));
             }
         }
+
         // Simultaneous explosions
         while(!explosionList.empty()){
             //if (global_debug) cerr << "EXPLOSSSION " << endl;
@@ -663,7 +747,7 @@ struct Board
                    new_pos.x >= 0 && new_pos.x < GLOBAL_MAX_WIDTH &&
                    new_pos.y >= 0 && new_pos.y < GLOBAL_MAX_HEIGHT) { // valid move
                     if (this->theBoard[new_pos.x][new_pos.y].hasBonus()) { // we take an item
-                       this->increaseScore(1);
+                       this->increaseScore(1 * (multiplier/2));
                        if(this->theBoard[new_pos.x][new_pos.y].t == Square::type::item_b_range){
                            ++this->players[id].range;
                        }else{
@@ -804,6 +888,11 @@ struct Evolution {
             this->theGenomes.push(bestGenomes[i]);
         }
         //TODO may be add pure random gene
+        for (uint i=0; i<GLOBAL_POPULATION_SIZE/4; ++i) {
+            // Add 20% of random
+            this->calculateScoreAndInsert(id, Genome());
+            ++last;
+        }
         //cerr << "generate new pop " << endl;
         for (/*last alredy set*/; last < GLOBAL_POPULATION_SIZE && !(global_timer->isTimesUp()); ++last) {
             int index_genome1 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_POPULATION_SIZE/100)) ;
