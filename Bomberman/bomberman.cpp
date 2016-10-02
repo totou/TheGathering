@@ -27,9 +27,10 @@ const signed char GLOBAL_MAX_HEIGHT = 11;
 bool global_debug = false;
 const signed char GLOBAL_PLAYER_NUM = 4;
 const float GLOBAL_MUTATION_RATE = 0.15;
-const uint GLOBAL_POPULATION_SIZE = 1000;
+const uint GLOBAL_POPULATION_SIZE = 2500;
 const uint GLOBAL_MAX_GENERATION_NUM = 50;
-const uint GLOBAL_INITIAL_POP_SIZE = GLOBAL_POPULATION_SIZE*3;
+const uint GLOBAL_INITIAL_POP_SIZE = GLOBAL_POPULATION_SIZE*4;
+const uint GLOBAL_TOP_PERCENT = GLOBAL_POPULATION_SIZE/100;// Top 1%
 
 int global_turn = 1;
 
@@ -555,7 +556,7 @@ struct Board
             if (this->players[g_board_killPlayersOnSquare_i].p == p) {
                 // Then player is dead
                 this->players[g_board_killPlayersOnSquare_i].kill();
-                if (global_debug) cerr << "Die " << to_string(g_board_killPlayersOnSquare_i) << endl;
+                //if (global_debug) cerr << "Die " << to_string(g_board_killPlayersOnSquare_i) << endl;
             }
         }
     }
@@ -690,7 +691,7 @@ struct Board
         // Cleaning the map
         while(!g_board_deletedObjects.empty()){
             Square* pSquare = g_board_deletedObjects.front();
-            if (global_debug) cerr << "Clean Board " << pSquare->toString() << endl;
+            //if (global_debug) cerr << "Clean Board " << pSquare->toString() << endl;
             if (pSquare->containsPlayer()) {
                 this->killPlayersOnSquare(pSquare->p);
             }
@@ -871,36 +872,36 @@ struct Genome {
     }
 };
 
-char g_Top10Genome_i;
-char g_Top10Genome_best;
+char g_TopPercentGenome_i;
+char g_TopPercentGenome_best;
 
-struct Top10Genome {
-    Genome array[10];
+struct TopPercentGenome {
+    Genome array[GLOBAL_TOP_PERCENT];
     char minIt = 0;
-    inline Top10Genome() = default;
-    inline Top10Genome(Top10Genome const&) = default;
-    inline Top10Genome(Top10Genome&&) = default;
-    inline Top10Genome& operator=(Top10Genome const&) = default;
-    inline Top10Genome& operator=(Top10Genome&&) = default;
+    inline TopPercentGenome() = default;
+    inline TopPercentGenome(TopPercentGenome const&) = default;
+    inline TopPercentGenome(TopPercentGenome&&) = default;
+    inline TopPercentGenome& operator=(TopPercentGenome const&) = default;
+    inline TopPercentGenome& operator=(TopPercentGenome&&) = default;
 
     inline void addSup(const Genome& g) {
         if( this->array[this->minIt] < g ){
             this->array[this->minIt] = g;
-            for(g_Top10Genome_i=0;g_Top10Genome_i<10;++g_Top10Genome_i){
-                if(this->array[g_Top10Genome_i] < this->array[this->minIt]){
-                    this->minIt = g_Top10Genome_i;
+            for(g_TopPercentGenome_i=0;g_TopPercentGenome_i<GLOBAL_TOP_PERCENT;++g_TopPercentGenome_i){
+                if(this->array[g_TopPercentGenome_i] < this->array[this->minIt]){
+                    this->minIt = g_TopPercentGenome_i;
                 }
             }
         }
     }
     inline Genome top() {
-        g_Top10Genome_best = 0;
-        for(g_Top10Genome_i=1;g_Top10Genome_i<10;++g_Top10Genome_i){
-            if(this->array[g_Top10Genome_best] < this->array[g_Top10Genome_i]){
-                g_Top10Genome_best = g_Top10Genome_i;
+        g_TopPercentGenome_best = 0;
+        for(g_TopPercentGenome_i=1;g_TopPercentGenome_i<GLOBAL_TOP_PERCENT;++g_TopPercentGenome_i){
+            if(this->array[g_TopPercentGenome_best] < this->array[g_TopPercentGenome_i]){
+                g_TopPercentGenome_best = g_TopPercentGenome_i;
             }
         }
-        return this->array[g_Top10Genome_best];
+        return this->array[g_TopPercentGenome_best];
     }
 };
 
@@ -943,7 +944,7 @@ struct FullGenome {
 
 struct Evolution {
     FullGenome theFullGenomes [GLOBAL_POPULATION_SIZE];
-    Top10Genome theTopGenomes [GLOBAL_PLAYER_NUM];
+    TopPercentGenome theTopGenomes [GLOBAL_PLAYER_NUM];
 
     inline Evolution() = default;
     inline Evolution(Evolution const&) = default;
@@ -986,7 +987,7 @@ struct Evolution {
         ++global_generation;
         uint i = 0;
         //insert previous generation best
-        for (; i< 10; ++i) {
+        for (; i< GLOBAL_TOP_PERCENT; ++i) {
             this->theFullGenomes[i] = FullGenome(this->theTopGenomes[0].array[i],this->theTopGenomes[1].array[i],this->theTopGenomes[2].array[i],this->theTopGenomes[3].array[i]);
         }
         //May be add pure random gene
@@ -995,8 +996,8 @@ struct Evolution {
         }
         //cross breed the remaining from best
         for (; i < GLOBAL_POPULATION_SIZE; ++i) {
-            int index_genome1 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (10)) ;
-            int index_genome2 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (10)) ;
+            int index_genome1 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_TOP_PERCENT)) ;
+            int index_genome2 = int ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) * (GLOBAL_TOP_PERCENT)) ;
             // We have a new genome with a new score
             this->theFullGenomes[i].cross(this->theFullGenomes[index_genome1],this->theFullGenomes[index_genome2]);
         }
@@ -1021,11 +1022,11 @@ struct Evolution {
         FullGenome aFullgenome = FullGenome();
         long int best_score=LONG_MIN;
         char best = -1;
-        for(char i=0; i < 10;++i){
-            cerr << "best gene" << theTopGenomes[id].array[i].array[0].toString() <<endl;
+        for(char i=0; i < GLOBAL_TOP_PERCENT;++i){
+            //cerr << "best gene" << theTopGenomes[id].array[i].array[0].toString() <<endl;
             long int temp_score=0;
             aFullgenome = FullGenome(theTopGenomes[0].array[i],theTopGenomes[1].array[i],theTopGenomes[2].array[i],theTopGenomes[3].array[i]);
-            for(char j=0; j < 10;++j){
+            for(char j=0; j < GLOBAL_TOP_PERCENT;++j){
                 for(char k=0; k < GLOBAL_PLAYER_NUM;++k){
                     if(k!=id){
                         aFullgenome.update(k,theTopGenomes[k].array[j]);
@@ -1077,7 +1078,6 @@ int main()
     while (1)
     {
         global_debug=false;
-        global_debug=true;
         global_compute = 0;
         global_generation = 0;
         previous_board = theBoard;
@@ -1120,7 +1120,7 @@ int main()
         //     bestFullGenomes.update(i, evol.theTopGenomes[i].top());
         // }
         const Genome& myBestGenome = bestFullGenomes.array[myId];
-        global_debug=true;
+        global_debug=false;
         //cerr << "PLayer" << global_board->players[global_board->myId].toString() << endl;
         // Board tmp_board = *global_board;
         // cerr << "BEFORE" << endl;
